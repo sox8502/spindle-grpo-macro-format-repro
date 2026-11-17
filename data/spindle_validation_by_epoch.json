@@ -1,0 +1,106 @@
+{
+ "0": {
+  "cases": 180,
+  "successes": 24,
+  "format_terminations": 13,
+  "phase": "validation",
+  "sampler_path": "tinker://3ceade808c2e312f65ef52da42069ccf:train:0/sampler_weights/sft-final",
+  "by_trip_length": {
+   "3": {
+    "cases": 60,
+    "successes": 21
+   },
+   "5": {
+    "cases": 60,
+    "successes": 3
+   },
+   "7": {
+    "cases": 60,
+    "successes": 0
+   }
+  },
+  "terminations": {
+   "ENV_DONE": 169,
+   "TRUNCATION": 11
+  },
+  "reward_errors": {
+   "Format error occurs in the previous turn!": 13
+  },
+  "failure_categories": {
+   "model_format_failure": 13,
+   "model_task_failure": 143,
+   "success": 24
+  },
+  "infrastructure_failed_cases": 0
+ },
+ "1": {
+  "cases": 180,
+  "successes": 45,
+  "format_terminations": 62,
+  "phase": "validation",
+  "sampler_path": "tinker://bd1cb42d-654d-43cc-a9bc-534c7d0ac502:train:0/sampler_weights/rl-batch-31-step-31",
+  "by_trip_length": {
+   "3": {
+    "cases": 60,
+    "successes": 30
+   },
+   "5": {
+    "cases": 60,
+    "successes": 12
+   },
+   "7": {
+    "cases": 60,
+    "successes": 3
+   }
+  },
+  "terminations": {
+   "ENV_DONE": 112,
+   "TRUNCATION": 68
+  },
+  "reward_errors": {
+   "Format error occurs in the previous turn!": 62
+  },
+  "failure_categories": {
+   "model_task_failure": 66,
+   "success": 45,
+   "model_format_failure": 62,
+   "token_limit": 7
+  },
+  "infrastructure_failed_cases": 0
+ },
+ "2": {
+  "cases": 180,
+  "successes": 55,
+  "format_terminations": 56,
+  "phase": "validation",
+  "sampler_path": "tinker://bd1cb42d-654d-43cc-a9bc-534c7d0ac502:train:0/sampler_weights/rl-batch-62-step-62",
+  "by_trip_length": {
+   "3": {
+    "cases": 60,
+    "successes": 31
+   },
+   "5": {
+    "cases": 60,
+    "successes": 13
+   },
+   "7": {
+    "cases": 60,
+    "successes": 11
+   }
+  },
+  "terminations": {
+   "ENV_DONE": 119,
+   "TRUNCATION": 61
+  },
+  "reward_errors": {
+   "Format error occurs in the previous turn!": 56
+  },
+  "failure_categories": {
+   "success": 55,
+   "model_task_failure": 64,
+   "model_format_failure": 56,
+   "token_limit": 5
+  },
+  "infrastructure_failed_cases": 0
+ }
+}

@@ -1,0 +1,26 @@
+{
+  "previous_examples": 185,
+  "new_examples": 1140,
+  "validation": {
+    "previous_success": 14,
+    "new_success": 36,
+    "cases": 180,
+    "delta_pp": 12.222222222222221
+  },
+  "new_validation_summary": {
+    "cases": 180,
+    "task_success": 36,
+    "task_success_rate": 0.2,
+    "generation_errors": 13,
+    "formatter_errors": 0,
+    "empty_plans": 20,
+    "answers_found": 160,
+    "scoring_errors": 0,
+    "query_sha256": "e0e7d2f19b708366ffc1a1e5cba231792c651608018418c6507bf53c800e1c1b"
+  },
+  "checkpoint": {
+    "step": 144,
+    "state_path": "tinker://3ceade808c2e312f65ef52da42069ccf/weights/sft-final",
+    "sampler_path": "tinker://3ceade808c2e312f65ef52da42069ccf:train:0/sampler_weights/sft-final"
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "queries": 2000,
+  "mix": {
+    "easy": 800,
+    "medium": 600,
+    "hard": 600
+  },
+  "max_workers": 80,
+  "query_file": "collection_queries.jsonl",
+  "query_file_sha256": "205f7f04276fe2ef5accbf91fd55245e7871c749657485a0debcb7f3187d73c3",
+  "record_teacher_api_evidence": true
+}

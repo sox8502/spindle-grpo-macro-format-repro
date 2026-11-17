@@ -1,0 +1,186 @@
+diff --git a/rl_config.json b/rl_config.json
+index c67856a..471d502 100644
+--- a/rl_config.json
++++ b/rl_config.json
+@@ -1,11 +1,11 @@
+ {
+-  "condition": "spindle-sft-grpo-macro-epochs1-2",
++  "condition": "tinker-sft-grpo-macro-epochs1-2",
+   "algorithm": "GRPO",
+   "reward_type": "macro",
+   "query_count": 1000,
+   "tool_failure_probability": 0,
+-  "sft_state": "tinker://3ceade808c2e312f65ef52da42069ccf/weights/sft-final",
+-  "sft_sampler": "tinker://3ceade808c2e312f65ef52da42069ccf:train:0/sampler_weights/sft-final",
++  "sft_state": "tinker://d40167e7-406d-5be8-801c-80bc5c2a9029:train:0/weights/sft-final",
++  "sft_sampler": "tinker://d40167e7-406d-5be8-801c-80bc5c2a9029:train:0/sampler_weights/sft-final",
+   "seed": 42,
+   "epochs": 5,
+   "stop_after_epochs": 2,
+@@ -37,9 +37,8 @@
+   },
+   "rollout_priority": "longer_trips_first",
+   "epoch_audit_gate": false,
+-  "compute_backend": "spindle",
++  "compute_backend": "tinker",
+   "initialization": "sft",
+   "lora_rank": 32,
+-  "budget_path": "~/star-artifacts/agent-star/rl-spindle-sft-2026-11-07/usage.sqlite3",
+-  "spindle_base_url": "https://YOUR-SPINDLE-FRONTEND.modal.run"
++  "budget_path": "~/star-artifacts/agent-star/rl-eight-config-2026-10-23/tinker-sft-two-epoch-usage.sqlite3"
+ }
+diff --git a/rl_cost.py b/rl_cost.py
+index fd11ba1..acf41cc 100644
+--- a/rl_cost.py
++++ b/rl_cost.py
+@@ -14,6 +14,7 @@ from sft_data import append_jsonl
+ from rl_budget import Budget, BudgetExceeded, formatter_upper
+ 
+ RATES = {'prefill': 0.33, 'cached_prefill': 0.066, 'sample': 1.005, 'train': 0.737}
++FORMATTER_RETRY_STATUSES = {429, 503}
+ _context = threading.local()
+ _lock = threading.Lock()
+ 
+@@ -68,7 +69,7 @@ def call_format_model(messages, format_model='deepseek-chat', max_retries=2, pro
+         raise ValueError('Unknown formatter profile')
+     evidence = output / (identity + '-formatter.jsonl.gz')
+     append_jsonl(evidence, {'request': payload})
+-    attempt, rate_limits = first_attempt, 0
++    attempt, transient_failures = first_attempt, 0
+     while attempt <= max_retries:
+         reservation = budget.reserve(f'formatter:{identity}:{attempt}', formatter_upper(messages))
+         event = {'phase': 'reward_formatter', 'identity': identity, 'attempt': attempt,
+@@ -103,16 +104,18 @@ def call_format_model(messages, format_model='deepseek-chat', max_retries=2, pro
+             event.update(status='error', error=f'{type(error).__name__}: {error}')
+             record(output, event)
+             append_jsonl(evidence, {'attempt': attempt, 'error': event['error']})
+-            limited = isinstance(error, requests.HTTPError) and error.response is not None and error.response.status_code == 429
+-            if limited:
+-                rate_limits += 1
+-                if rate_limits == 20:
++            status = error.response.status_code if isinstance(error, requests.HTTPError) and error.response is not None else None
++            if status in FORMATTER_RETRY_STATUSES:
++                transient_failures += 1
++                if transient_failures == 20:
+                     raise
+                 try:
+                     delay = float(error.response.headers['Retry-After'])
+                 except (ValueError, KeyError):
+                     delay = 0
+-                delay = min(120, max(30 * min(rate_limits, 2), delay))
++                backoff = (30 * min(transient_failures, 2) if status == 429
++                           else 5 * 2 ** min(transient_failures - 1, 5))
++                delay = min(120, max(backoff, delay))
+                 time.sleep(delay + random.uniform(0, 30))
+                 continue
+             if isinstance(error, BudgetExceeded) or attempt == max_retries:
+diff --git a/rl_rollout.py b/rl_rollout.py
+index 873a66a..8ecaee1 100644
+--- a/rl_rollout.py
++++ b/rl_rollout.py
+@@ -152,22 +152,21 @@ def _read_journal(path):
+ 
+ 
+ def _cached_formatter(path):
+-    from rl_cost import FormatterContentError, call_format_model, parse_formatter_content
++    from rl_cost import FORMATTER_RETRY_STATUSES, FormatterContentError, call_format_model, parse_formatter_content
+     rows = _read_journal(path)
+     request = rows[0]["request"]
+     responses = [row for row in rows if "response" in row]
+-    rate_limited = {row["attempt"] for row in responses if row["status"] == 429}
+-    attempts = [row for row in responses if row["status"] != 429]
++    transient = {row["attempt"] for row in responses if row["status"] in FORMATTER_RETRY_STATUSES}
++    attempts = [row for row in responses if row["status"] not in FORMATTER_RETRY_STATUSES]
+     transport_errors = [row.get("error", "") for row in rows if "error" in row]
+     transport_prefixes = ("ConnectionError:", "Timeout:", "ReadTimeout:",
+                           "ConnectTimeout:", "ChunkedEncodingError:")
+-    if not attempts and transport_errors and all(error.startswith(transport_prefixes) for error in transport_errors):
+-        return None
+-    if not attempts and rate_limited and all(error.startswith(
+-            transport_prefixes + ("HTTPError: 429 ",)) for error in transport_errors):
++    retry_prefixes = tuple(f"HTTPError: {status} " for status in FORMATTER_RETRY_STATUSES)
++    if not attempts and (transient or transport_errors) and all(
++            error.startswith(transport_prefixes + retry_prefixes) for error in transport_errors):
+         return None
+     numbers = [row["attempt"] for row in attempts]
+-    transport_attempts = rate_limited | {row["attempt"] for row in rows
++    transport_attempts = transient | {row["attempt"] for row in rows
+                           if row.get("error", "").startswith(transport_prefixes)}
+     if (not 1 <= len(attempts) <= 2 or numbers != sorted(set(numbers))
+             or any(number not in (1, 2) for number in numbers)
+@@ -187,8 +186,6 @@ def _cached_formatter(path):
+                 raise ValueError("Cached formatter continued after a successful attempt")
+             break
+     unfinished = numbers == [1] and len(errors) == 1
+-    if len(errors) == len(attempts) and len(attempts) != 2 and not unfinished:
+-        raise ValueError("Cached formatter did not exhaust the released two attempts")
+ 
+     def replay(messages, format_model="deepseek-chat", max_retries=2):
+         if messages != request["messages"] or max_retries != 2:
+@@ -230,7 +227,7 @@ def _restore_formatter_action_ids(action, source, task, evidence):
+ 
+ 
+ def _recovery_settlements(journal, rows, formatter_path, identity):
+-    from rl_cost import token_estimate
++    from rl_cost import FORMATTER_RETRY_STATUSES, token_estimate
+     sample = next(row for row in reversed(rows) if row["event"] == "sample")
+     reservation = sample.get("reservation_id")
+     sampling_recorded, formatter_events = False, {}
+@@ -242,7 +239,7 @@ def _recovery_settlements(journal, rows, formatter_path, identity):
+                 if reservation is not None and event.get("reservation_id") == reservation:
+                     sampling_recorded = True
+                 if (event.get("phase") == "reward_formatter" and event.get("identity") == identity
+-                        and event.get("http_status") != 429):
++                        and event.get("http_status") not in FORMATTER_RETRY_STATUSES):
+                     formatter_events[event["attempt"]] = event
+     settlements = []
+     if reservation is not None and not sampling_recorded:
+@@ -262,7 +259,7 @@ def _recovery_settlements(journal, rows, formatter_path, identity):
+             "reconciled_prior_payment": True, "source_evidence": str(journal)}})
+     if formatter_path is not None:
+         for row in _read_journal(formatter_path):
+-            if "response" not in row or row["status"] == 429:
++            if "response" not in row or row["status"] in FORMATTER_RETRY_STATUSES:
+                 continue
+             event = formatter_events.get(row["attempt"], {})
+             body = row["response"]
+diff --git a/rl_run.py b/rl_run.py
+index cb56101..7de4b76 100644
+--- a/rl_run.py
++++ b/rl_run.py
+@@ -348,7 +348,7 @@ def summarize_lineage(paths):
+ 
+ STUDY = ARTIFACTS / 'rl-eight-config-2026-10-23'
+ RL_HASH = '721616fca5835a20c28feb650ba26c012b7a26cd069e460e10aae6fca37d12f2'
+-SFT_ROOT = ARTIFACTS / 'sft-1140-spindle-65k-4h200-2026-11-06/pipeline'
++SFT_ROOT = ARTIFACTS / 'sft-1140-rl-disjoint-2026-10-23/pipeline'
+ 
+ 
+ def reward_for_epoch(mode, epoch):
+diff --git a/sft_backend.py b/sft_backend.py
+index 6caef25..1a7bd63 100644
+--- a/sft_backend.py
++++ b/sft_backend.py
+@@ -92,8 +92,7 @@ async def train(service, examples, tokenizer, output, config):
+         print('TRAINING_RESUMED ' + json.dumps(resume), flush=True)
+     else:
+         trainer = await service.create_lora_training_client_async(
+-            # Miles multi-LoRA rejects per-model seeds; config seed still fixes the shuffle.
+-            base_model=MODEL, rank=config['lora_rank'], seed=None if config.get('spindle_base_url') else config['seed'],
++            base_model=MODEL, rank=config['lora_rank'], seed=config['seed'],
+             train_mlp=True, train_attn=True, train_unembed=True,
+             user_metadata=metadata)
+     server_tokenizer = await asyncio.to_thread(trainer.get_tokenizer)
+diff --git a/sft_config.json b/sft_config.json
+index 17d1d19..877548e 100644
+--- a/sft_config.json
++++ b/sft_config.json
+@@ -24,7 +24,5 @@
+   "compress_evidence": true,
+   "min_free_disk_bytes": 1073741824,
+   "training_examples": 1140,
+-  "rl_holdout_sha256": "40197c32c8cc62d323e9d769f7628db4c7cd0e3bc19fd905db61c45498d7dba7",
+-  "spindle_base_url": "https://YOUR-SPINDLE-FRONTEND.modal.run",
+-  "stop_after_validation": true
++  "rl_holdout_sha256": "40197c32c8cc62d323e9d769f7628db4c7cd0e3bc19fd905db61c45498d7dba7"
+ }

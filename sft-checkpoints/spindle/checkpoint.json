@@ -1,0 +1,5 @@
+{
+  "step": 144,
+  "state_path": "tinker://3ceade808c2e312f65ef52da42069ccf/weights/sft-final",
+  "sampler_path": "tinker://3ceade808c2e312f65ef52da42069ccf:train:0/sampler_weights/sft-final"
+}
